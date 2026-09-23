@@ -151,6 +151,13 @@ public final class ServiceManager: ObservableObject {
         return nil
     }
 
+    public func isAnyProcessRunning() -> Bool {
+        if let pid = readPID(), isProcessAlive(pid: pid) {
+            return true
+        }
+        return false
+    }
+
     private func isProcessAlive(pid: Int32) -> Bool {
         return kill(pid, 0) == 0
     }
@@ -219,6 +226,7 @@ public final class ServiceManager: ObservableObject {
         process.currentDirectoryURL = tinyTitanDir
         
         var env = ProcessInfo.processInfo.environment
+        env["ROOT_DIR"] = tinyTitanDir.path
         for (k, v) in config.environmentDictionary {
             env[k] = v
         }

@@ -10,8 +10,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // 1. 初始化状态栏图标控制器 (直接呈现状态栏图标，无任何初始弹窗)
         statusBarController = StatusBarController()
 
-        // 2. 状态刷新
+        // 2. 状态刷新与按设置参数自动后台拉起服务
         manager.refreshState()
+        if !manager.isAnyProcessRunning() {
+            manager.startService()
+        }
     }
 
     public func applicationWillTerminate(_ notification: Notification) {

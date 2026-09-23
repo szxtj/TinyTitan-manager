@@ -37,7 +37,10 @@ public struct ServerConfiguration: Codable, Equatable {
     // 12. 请求并发排队上限 (默认: 4)
     public var queueLimit: Int
 
-    public static let defaultModelPath = "/Volumes/JustinSSD/TinyTitan-work/models/qwen3.8-flash-next_125B_A6B_4Bit"
+    public static var defaultModelPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(home)/TinyTitan/models/qwen3.8-flash-next_125B_A6B_4Bit"
+    }
 
     public init(
         port: Int = 1231,
@@ -90,20 +93,22 @@ public struct ServerConfiguration: Codable, Equatable {
     }
 
     /// 官方与脚本推荐配置基准
-    public static let `default` = ServerConfiguration(
-        port: 1231,
-        model: ServerConfiguration.defaultModelPath,
-        ramBudget: "8G",
-        expertCacheSlots: "",
-        maxContext: 32768,
-        kvBits: 8,
-        reasoning: "off",
-        lazyLoad: true,
-        idleUnloadSeconds: 0,
-        promptCacheMode: "multi-prefix",
-        promptCacheMemMib: 256,
-        queueLimit: 4
-    )
+    public static var `default`: ServerConfiguration {
+        ServerConfiguration(
+            port: 1231,
+            model: ServerConfiguration.defaultModelPath,
+            ramBudget: "8G",
+            expertCacheSlots: "",
+            maxContext: 32768,
+            kvBits: 8,
+            reasoning: "off",
+            lazyLoad: true,
+            idleUnloadSeconds: 0,
+            promptCacheMode: "multi-prefix",
+            promptCacheMemMib: 256,
+            queueLimit: 4
+        )
+    }
 
     private static let userDefaultsKey = "TinyTitan_ServerConfiguration"
 
@@ -128,8 +133,13 @@ public struct ServerConfiguration: Codable, Equatable {
 
     /// 读取持久化配置
     public static func load() -> ServerConfiguration {
+        let symlinkBase = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("TinyTitan").path
         if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-           let decoded = try? JSONDecoder().decode(ServerConfiguration.self, from: data) {
+           var decoded = try? JSONDecoder().decode(ServerConfiguration.self, from: data) {
+            // 规范化：自动将物理挂载卷路径迁移至符号链接路径以保持统一性
+            if decoded.model.contains("/Volumes/JustinSSD/TinyTitan-work") {
+                decoded.model = decoded.model.replacingOccurrences(of: "/Volumes/JustinSSD/TinyTitan-work", with: symlinkBase)
+            }
             return decoded
         }
         return .default

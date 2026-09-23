@@ -4,7 +4,10 @@
 # TinyTitan 本地模型服务管理脚本（双语注释版 · 对齐官方最新规范）
 # ==============================================================================
 
-ROOT_DIR="/Volumes/JustinSSD/TinyTitan-work"
+ROOT_DIR="${ROOT_DIR:-$HOME/TinyTitan}"
+if [[ ! -d "$ROOT_DIR" && -d "/Volumes/JustinSSD/TinyTitan-work" ]]; then
+    ROOT_DIR="/Volumes/JustinSSD/TinyTitan-work"
+fi
 BIN="$ROOT_DIR/bin/TinyTitanServer"
 LOG_FILE="$ROOT_DIR/server.log"
 PID_FILE="$ROOT_DIR/server.pid"
