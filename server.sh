@@ -198,6 +198,22 @@ start_server() {
     fi
     echo "   • 多轮前缀缓存: $PROMPT_CACHE_MODE (${PROMPT_CACHE_MEM_MIB} MiB)"
 
+    # 对齐模型安装收据 (Receipt) 的物理路径绑定：
+    # TinyTitanServer 严格校验 --model 传入的路径与 verified-install.json 中的 modelDirectoryPath 完全一致。
+    # 若模型路径是符号链接（如 ~/TinyTitan/...），自动对齐至收据签发时的实际物理路径，彻底杜绝 receipt mismatch 异常。
+    if [[ -f "$MODEL/verified-install.json" ]]; then
+        local receipt_dir
+        receipt_dir=$(grep -m 1 '"modelDirectoryPath"' "$MODEL/verified-install.json" 2>/dev/null | awk -F '"' '{print $4}')
+        if [[ -n "$receipt_dir" && -d "$receipt_dir" ]]; then
+            local model_real receipt_real
+            model_real=$(cd "$MODEL" 2>/dev/null && pwd -P)
+            receipt_real=$(cd "$receipt_dir" 2>/dev/null && pwd -P)
+            if [[ "$model_real" == "$receipt_real" ]]; then
+                MODEL="$receipt_dir"
+            fi
+        fi
+    fi
+
     # 动态组装命令行参数 / Assemble CLI Arguments
     local cmd=(
         "$BIN"

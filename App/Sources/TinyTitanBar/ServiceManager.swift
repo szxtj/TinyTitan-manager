@@ -230,6 +230,20 @@ public final class ServiceManager: ObservableObject {
         for (k, v) in config.environmentDictionary {
             env[k] = v
         }
+
+        // 对齐模型安装收据 (Receipt) 的物理路径绑定，杜绝符号链接导致的 receipt mismatch
+        let modelURL = URL(fileURLWithPath: config.model)
+        let receiptURL = modelURL.appendingPathComponent("verified-install.json")
+        if FileManager.default.fileExists(atPath: receiptURL.path),
+           let data = try? Data(contentsOf: receiptURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let receiptPath = json["modelDirectoryPath"] as? String {
+            let modelReal = (try? modelURL.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath
+            let receiptReal = (try? URL(fileURLWithPath: receiptPath).resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath
+            if let m = modelReal, let r = receiptReal, m == r {
+                env["MODEL"] = receiptPath
+            }
+        }
         process.environment = env
 
         let pipe = Pipe()
