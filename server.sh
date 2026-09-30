@@ -37,7 +37,7 @@ MODEL="${MODEL:-$ROOT_DIR/models/qwen3.8-flash-next_125B_A6B_4Bit}"
 
 # [EN] --ram-budget <size> (e.g. 4G, 6G, 8G, 10G, 12G, 16G)
 #      Resident-memory (RSS) target for the ENTIRE process, not just expert cache.
-#      Formula: Expert Cache = target - (resident weights 3.22G + runtime floor 0.53G).
+#      Formula: Expert Cache = target - (resident weights + runtime floor, about 3.7G on Qwen3.8 4-bit).
 #      - Minimum: 4G (Below 4G, base weights ~3.8G + 8 slots minimum cannot fit).
 #      - 8G (Recommended for 16GB Mac): Allocates 32 slots (~4GB cache), real peak RSS ~7.4-7.8G.
 #      - 12G: Allocates 64 slots (~8GB cache), peak RSS ~11.7G (faster decode, but needs 24GB+ Mac).
@@ -151,6 +151,29 @@ PROMPT_CACHE_MEM_MIB="${PROMPT_CACHE_MEM_MIB:-256}"
 # [CN] --queue-limit（请求队列上限，超出则返回 429 忙碌，默认 4）
 QUEUE_LIMIT="${QUEUE_LIMIT:-4}"
 
+# [EN] --prompt-cache-entries <count> (Retained prefix snapshots, 1...64, default 4)
+#      How many distinct conversation prefixes the in-memory prefix cache keeps.
+# [CN] --prompt-cache-entries（保留的前缀快照条数，1...64，默认 4）
+PROMPT_CACHE_ENTRIES="${PROMPT_CACHE_ENTRIES:-4}"
+
+# [EN] --max-concurrent-sequences <count> (Parallel generations, power of two 1...256, default 1)
+#      Generations served at once. Above 1 each holds its own KV cache (more memory, slower).
+# [CN] --max-concurrent-sequences（并行生成序列数，2 的幂 1...256，默认 1）
+MAX_CONCURRENT_SEQUENCES="${MAX_CONCURRENT_SEQUENCES:-1}"
+
+# [EN] --prefill-chunk <tokens> (Prefill chunk size, 32...4096, default 4096)
+#      Tokens processed per prefill step; tune for TTFT vs throughput.
+# [CN] --prefill-chunk（预填充分块大小，32...4096，默认 4096）
+PREFILL_CHUNK="${PREFILL_CHUNK:-4096}"
+
+# [EN] --prompt-cache-disk <dir> + --prompt-cache-disk-mib <MiB> (persistent SSD cache)
+#      Pairs with --idle-unload-seconds so the prefix cache survives an unload
+#      instead of paying a full cold prefill on the next request.
+# [CN] --prompt-cache-disk <目录> + --prompt-cache-disk-mib <MiB>（可选持久 SSD 缓存）
+#      与 --idle-unload-seconds 配合：卸载权重后前缀缓存仍可无感恢复，免去冷启动重算。
+PROMPT_CACHE_DISK_DIR="${PROMPT_CACHE_DISK_DIR:-}"
+PROMPT_CACHE_DISK_MIB="${PROMPT_CACHE_DISK_MIB:-8192}"
+
 
 # ==============================================================================
 # Helper Functions / 辅助控制函数
@@ -197,6 +220,9 @@ start_server() {
         echo "   • 空闲内存释放: 保持常驻内存 (未开启自动释放)"
     fi
     echo "   • 多轮前缀缓存: $PROMPT_CACHE_MODE (${PROMPT_CACHE_MEM_MIB} MiB)"
+    if [[ -n "$PROMPT_CACHE_DISK_DIR" ]]; then
+        echo "   • 前缀缓存落盘: $PROMPT_CACHE_DISK_DIR (${PROMPT_CACHE_DISK_MIB} MiB)"
+    fi
 
     # 对齐模型安装收据 (Receipt) 的物理路径绑定：
     # TinyTitanServer 严格校验 --model 传入的路径与 verified-install.json 中的 modelDirectoryPath 完全一致。
@@ -226,6 +252,9 @@ start_server() {
         --prompt-cache-mode "$PROMPT_CACHE_MODE"
         --prompt-cache-memory-mib "$PROMPT_CACHE_MEM_MIB"
         --queue-limit "$QUEUE_LIMIT"
+        --prompt-cache-entries "$PROMPT_CACHE_ENTRIES"
+        --max-concurrent-sequences "$MAX_CONCURRENT_SEQUENCES"
+        --prefill-chunk "$PREFILL_CHUNK"
     )
 
     if [[ "$LAZY_LOAD" == "true" ]]; then
@@ -238,6 +267,15 @@ start_server() {
 
     if [[ -n "$EXPERT_CACHE_SLOTS" ]]; then
         cmd+=(--expert-cache-slots "$EXPERT_CACHE_SLOTS")
+    fi
+
+    if [[ -n "$PROMPT_CACHE_DISK_DIR" ]]; then
+        # 展开开头的 ~ 为 $HOME，支持在 UI 中直接填写 ~/TinyTitan/prompt-cache（仍会解析到外置 SSD）
+        case "$PROMPT_CACHE_DISK_DIR" in
+            "~"|"~/"*) PROMPT_CACHE_DISK_DIR="$HOME${PROMPT_CACHE_DISK_DIR#\~}" ;;
+        esac
+        cmd+=(--prompt-cache-disk "$PROMPT_CACHE_DISK_DIR")
+        cmd+=(--prompt-cache-disk-mib "$PROMPT_CACHE_DISK_MIB")
     fi
 
     nohup "${cmd[@]}" > "$LOG_FILE" 2>&1 &

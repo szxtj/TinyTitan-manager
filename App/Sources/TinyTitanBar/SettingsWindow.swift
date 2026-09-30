@@ -63,6 +63,8 @@ public struct SettingsView: View {
                     contextAndKVSection
                     Divider()
                     reasoningAndLifecycleSection
+                    Divider()
+                    advancedSection
                 }
                 .padding(24)
             }
@@ -220,7 +222,7 @@ public struct SettingsView: View {
                         }
                         .labelsHidden()
                         .frame(width: 440)
-                        Text(l10n.tr("--ram-budget: Target RSS for entire process. Cache = target - (weights 3.22G + floor 0.53G). 8G yields ~7.6G peak RSS, zero swap.", "官方最新规范：控制整个进程的总物理常驻内存，自动扣减底座 3.75G 后分配缓存。8G 实测峰值 7.6GB，彻底杜绝爆内存与 swap。"))
+                        Text(l10n.tr("--ram-budget: Target RSS for entire process. Cache = target - (weights + floor, about 3.7G on Qwen3.8 4-bit). 8G yields ~7.6G peak RSS, zero swap.", "官方最新规范：控制整个进程的总物理常驻内存，自动扣减底座（约 3.7G，Qwen3.8 4-bit）后分配缓存。8G 实测峰值 7.6GB，彻底杜绝爆内存与 swap。"))
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
@@ -425,6 +427,84 @@ public struct SettingsView: View {
                         Text(l10n.tr("Maximum queued requests before returning HTTP 429.", "排队请求上限，超过此数目直接返回 429 忙碌。"))
                             .font(.caption2)
                             .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 5. 高级参数 (Advanced / TinyTitan v5.13)
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(l10n.tr("Advanced Parameters", "高级参数 (v5.13 新增)"), systemImage: "slider.vertical.3")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.primary)
+
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 14) {
+                GridRow {
+                    Text(l10n.tr("Max Concurrent Sequences:", "并行生成序列数:")).font(.subheadline).gridColumnAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $draftConfig.maxConcurrentSequences) {
+                            Text("1").tag(1)
+                            Text("2").tag(2)
+                            Text("4").tag(4)
+                            Text("8").tag(8)
+                            Text("16").tag(16)
+                        }.labelsHidden().frame(width: 220)
+                        Text(l10n.tr("Generations served at once (power of two). Above 1 each holds its own KV cache — more memory, slower.", "同时服务的生成数（2 的幂）。大于 1 时每条序列独占 KV 缓存：内存更高、单条更慢。")).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
+                GridRow {
+                    Text(l10n.tr("Prefill Chunk:", "预填充分块:")).font(.subheadline).gridColumnAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $draftConfig.prefillChunk) {
+                            Text("32").tag(32)
+                            Text("64").tag(64)
+                            Text("128").tag(128)
+                            Text("256").tag(256)
+                            Text("512").tag(512)
+                            Text("1024").tag(1024)
+                            Text("2048").tag(2048)
+                            Text("4096 (Default)").tag(4096)
+                        }.labelsHidden().frame(width: 220)
+                        Text(l10n.tr("Tokens per prefill step; tune TTFT vs throughput.", "每次预填充的 token 数；在首字延迟与吞吐之间权衡。")).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
+                GridRow {
+                    Text(l10n.tr("Prompt Cache Entries:", "前缀缓存条目数:")).font(.subheadline).gridColumnAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $draftConfig.promptCacheEntries) {
+                            Text("1").tag(1)
+                            Text("2").tag(2)
+                            Text("4 (Default)").tag(4)
+                            Text("8").tag(8)
+                            Text("16").tag(16)
+                            Text("32").tag(32)
+                            Text("64").tag(64)
+                        }.labelsHidden().frame(width: 220)
+                        Text(l10n.tr("Distinct conversation prefixes kept in the in-memory cache.", "内存前缀缓存保留的不同对话前缀数量。")).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
+                GridRow {
+                    Text(l10n.tr("Prompt Cache Disk Dir:", "前缀缓存落盘目录:")).font(.subheadline).gridColumnAlignment(.trailing)
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField(l10n.tr("optional: /path/to/cache", "可选：/路径/到/缓存"), text: $draftConfig.promptCacheDiskDir).textFieldStyle(RoundedBorderTextFieldStyle()).frame(width: 440)
+                        Text(l10n.tr("Pairs with Idle Unload: prefix cache survives an unload instead of a cold prefill.", "与「空闲释放」配合：卸载权重后前缀缓存仍可无感恢复，免去冷启动重算。")).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+
+                if !draftConfig.promptCacheDiskDir.trimmingCharacters(in: .whitespaces).isEmpty {
+                    GridRow {
+                        Text(l10n.tr("Disk Cache Budget:", "落盘缓存预算:")).font(.subheadline).gridColumnAlignment(.trailing)
+                        Picker("", selection: $draftConfig.promptCacheDiskMib) {
+                            Text("1024 MiB").tag(1024)
+                            Text("2048 MiB").tag(2048)
+                            Text("4096 MiB").tag(4096)
+                            Text("8192 MiB (Default)").tag(8192)
+                        }.labelsHidden().frame(width: 320)
                     }
                 }
             }

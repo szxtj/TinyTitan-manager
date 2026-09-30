@@ -37,9 +37,31 @@ public struct ServerConfiguration: Codable, Equatable {
     // 12. 请求并发排队上限 (默认: 4)
     public var queueLimit: Int
 
+    // 13. 前缀缓存保留条目数 (1...64, 默认: 4)
+    public var promptCacheEntries: Int
+
+    // 14. 并行生成序列数 (2 的幂 1...256, 默认: 1)
+    public var maxConcurrentSequences: Int
+
+    // 15. 预填充分块大小 (32...4096, 默认: 4096)
+    public var prefillChunk: Int
+
+    // 16. 前缀缓存落盘目录 (可选；与 idle-unload 配合可保留对话前缀缓存)
+    public var promptCacheDiskDir: String
+
+    // 17. 前缀缓存落盘内存预算 MiB (默认: 8192)
+    public var promptCacheDiskMib: Int
+
     public static var defaultModelPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return "\(home)/TinyTitan/models/qwen3.8-flash-next_125B_A6B_4Bit"
+    }
+
+    /// 前缀缓存落盘目录默认位置：落在 ~/TinyTitan 符号链接指向的外置雷电4 SSD，
+    /// 与模型/运行时同盘——所有大模型相关磁盘缓存都必须在外部磁盘上。
+    public static var defaultPromptCacheDiskDir: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(home)/TinyTitan/prompt-cache"
     }
 
     public init(
@@ -51,10 +73,15 @@ public struct ServerConfiguration: Codable, Equatable {
         kvBits: Int = 8,
         reasoning: String = "off",
         lazyLoad: Bool = true,
-        idleUnloadSeconds: Int = 0,
+        idleUnloadSeconds: Int = 1800,
         promptCacheMode: String = "multi-prefix",
         promptCacheMemMib: Int = 256,
-        queueLimit: Int = 4
+        queueLimit: Int = 4,
+        promptCacheEntries: Int = 4,
+        maxConcurrentSequences: Int = 1,
+        prefillChunk: Int = 4096,
+        promptCacheDiskDir: String = ServerConfiguration.defaultPromptCacheDiskDir,
+        promptCacheDiskMib: Int = 8192
     ) {
         self.port = port
         self.model = model
@@ -68,12 +95,19 @@ public struct ServerConfiguration: Codable, Equatable {
         self.promptCacheMode = promptCacheMode
         self.promptCacheMemMib = promptCacheMemMib
         self.queueLimit = queueLimit
+        self.promptCacheEntries = promptCacheEntries
+        self.maxConcurrentSequences = maxConcurrentSequences
+        self.prefillChunk = prefillChunk
+        self.promptCacheDiskDir = promptCacheDiskDir
+        self.promptCacheDiskMib = promptCacheDiskMib
     }
 
     enum CodingKeys: String, CodingKey {
         case port, model, ramBudget, expertCacheSlots, maxContext, kvBits
         case reasoning, lazyLoad, idleUnloadSeconds, promptCacheMode
         case promptCacheMemMib, queueLimit
+        case promptCacheEntries, maxConcurrentSequences, prefillChunk
+        case promptCacheDiskDir, promptCacheDiskMib
     }
 
     public init(from decoder: any Decoder) throws {
@@ -86,10 +120,15 @@ public struct ServerConfiguration: Codable, Equatable {
         kvBits = try container.decodeIfPresent(Int.self, forKey: .kvBits) ?? 8
         reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning) ?? "off"
         lazyLoad = try container.decodeIfPresent(Bool.self, forKey: .lazyLoad) ?? true
-        idleUnloadSeconds = try container.decodeIfPresent(Int.self, forKey: .idleUnloadSeconds) ?? 0
+        idleUnloadSeconds = try container.decodeIfPresent(Int.self, forKey: .idleUnloadSeconds) ?? 1800
         promptCacheMode = try container.decodeIfPresent(String.self, forKey: .promptCacheMode) ?? "multi-prefix"
         promptCacheMemMib = try container.decodeIfPresent(Int.self, forKey: .promptCacheMemMib) ?? 256
         queueLimit = try container.decodeIfPresent(Int.self, forKey: .queueLimit) ?? 4
+        promptCacheEntries = try container.decodeIfPresent(Int.self, forKey: .promptCacheEntries) ?? 4
+        maxConcurrentSequences = try container.decodeIfPresent(Int.self, forKey: .maxConcurrentSequences) ?? 1
+        prefillChunk = try container.decodeIfPresent(Int.self, forKey: .prefillChunk) ?? 4096
+        promptCacheDiskDir = try container.decodeIfPresent(String.self, forKey: .promptCacheDiskDir) ?? ServerConfiguration.defaultPromptCacheDiskDir
+        promptCacheDiskMib = try container.decodeIfPresent(Int.self, forKey: .promptCacheDiskMib) ?? 8192
     }
 
     /// 官方与脚本推荐配置基准
@@ -103,10 +142,15 @@ public struct ServerConfiguration: Codable, Equatable {
             kvBits: 8,
             reasoning: "off",
             lazyLoad: true,
-            idleUnloadSeconds: 0,
+            idleUnloadSeconds: 1800,
             promptCacheMode: "multi-prefix",
             promptCacheMemMib: 256,
-            queueLimit: 4
+            queueLimit: 4,
+            promptCacheEntries: 4,
+            maxConcurrentSequences: 1,
+            prefillChunk: 4096,
+            promptCacheDiskDir: ServerConfiguration.defaultPromptCacheDiskDir,
+            promptCacheDiskMib: 8192
         )
     }
 
@@ -169,6 +213,11 @@ public struct ServerConfiguration: Codable, Equatable {
         export PROMPT_CACHE_MODE="\(promptCacheMode)"
         export PROMPT_CACHE_MEM_MIB=\(promptCacheMemMib)
         export QUEUE_LIMIT=\(queueLimit)
+        export PROMPT_CACHE_ENTRIES=\(promptCacheEntries)
+        export MAX_CONCURRENT_SEQUENCES=\(maxConcurrentSequences)
+        export PREFILL_CHUNK=\(prefillChunk)
+        export PROMPT_CACHE_DISK_DIR="\(promptCacheDiskDir)"
+        export PROMPT_CACHE_DISK_MIB=\(promptCacheDiskMib)
         """
         try? envContent.write(to: ServerConfiguration.envConfigFile, atomically: true, encoding: .utf8)
         
@@ -192,7 +241,12 @@ public struct ServerConfiguration: Codable, Equatable {
             "IDLE_UNLOAD_SECONDS": "\(idleUnloadSeconds)",
             "PROMPT_CACHE_MODE": promptCacheMode,
             "PROMPT_CACHE_MEM_MIB": "\(promptCacheMemMib)",
-            "QUEUE_LIMIT": "\(queueLimit)"
+            "QUEUE_LIMIT": "\(queueLimit)",
+            "PROMPT_CACHE_ENTRIES": "\(promptCacheEntries)",
+            "MAX_CONCURRENT_SEQUENCES": "\(maxConcurrentSequences)",
+            "PREFILL_CHUNK": "\(prefillChunk)",
+            "PROMPT_CACHE_DISK_DIR": promptCacheDiskDir,
+            "PROMPT_CACHE_DISK_MIB": "\(promptCacheDiskMib)"
         ]
         if !expertCacheSlots.trimmingCharacters(in: .whitespaces).isEmpty {
             dict["EXPERT_CACHE_SLOTS"] = expertCacheSlots

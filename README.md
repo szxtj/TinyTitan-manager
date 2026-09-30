@@ -49,7 +49,7 @@ Forked and evolved from the upstream runtime, TinyTitan introduces cutting-edge 
 Provides visual configuration for all 12 specialized parameters:
 - **Port (`--port`)**: Loopback port (default: `1231`).
 - **Model Path (`--model`)**: Path to `.gturbo` model directory.
-- **RAM Budget (`--ram-budget`)**: Controls **entire process RSS memory** (e.g. `4G`, `6G`, `8G` recommended for 16GB Macs, `12G`, `16G`, `24G`). Bottom-up formula reserves base weights (3.22GB) and runtime floor (0.53GB), fitting routed-expert cache into the exact target.
+- **RAM Budget (`--ram-budget`)**: Controls **entire process RSS memory** (e.g. `4G`, `6G`, `8G` recommended for 16GB Macs, `12G`, `16G`, `24G`). Bottom-up formula reserves the resident weights plus runtime floor — about 3.7GB on a Qwen3.8 4-bit install — fitting the routed-expert cache into the exact target.
 - **Expert Cache Slots (`--expert-cache-slots`)**: Optional manual override (8 to 256 slots).
 - **Max Context (`--max-context`)**: 4K up to 256K native token window (32K default recommended).
 - **KV Precision (`--kv-bits`)**: `8` (8-bit quantization - recommended balance), `4` (4-bit compression - cuts memory in half), `16` (FP16).
@@ -76,6 +76,8 @@ Provides visual configuration for all 12 specialized parameters:
 The output will be placed in:
 - `TinyTitanBar.app`
 - `TinyTitanBar.dmg`
+
+> **Runtime:** TinyTitan Manager is tested against **TinyTitan v5.13**. The `TinyTitanServer` inference binary is *not* bundled — fetch it from the upstream release (`Pummelchen/TinyTitan` → `tinytitan-5.13-macos-arm64.tar.gz`, verify its `.sha256`) and place it under `~/TinyTitan/bin/`.
 
 ---
 
@@ -113,3 +115,5 @@ The output will be placed in:
 构建产物位于当前目录：
 - `TinyTitanBar.app`：原生可执行应用包
 - `TinyTitanBar.dmg`：带 Applications 快捷软链接的发布镜像
+
+> **运行时常驻内核：** TinyTitan Manager 以 **TinyTitan v5.13** 为验证基准。`TinyTitanServer` 推理二进制并不随管理器打包——请从上游发布页（`Pummelchen/TinyTitan` → `tinytitan-5.13-macos-arm64.tar.gz`，并校验其 `.sha256`）下载，放至 `~/TinyTitan/bin/` 即可。
